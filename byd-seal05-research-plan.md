@@ -649,11 +649,78 @@ WriteEntry("window_driver_pos", dev=1001, writeFid=1276219408, valueMin=0, value
 
 | الملف | الحجم | الحالة |
 |---|---|---|
-| `AutoVoice.apk` (`com.byd.autovoice.aispeech`, `/system/priv-app/AutoVoice/`) | 510MB | لم يُحلَّل بعد — ذو صلة مباشرة بالمحور 4.2 (المساعد الصوتي)، قد يكشف آلية تعامل "你好小迪" مع المايك وfids إضافية موثّقة فعلياً على **سيارتنا بالذات** |
+| `AutoVoice.apk` (`com.byd.autovoice.aispeech`, `/system/priv-app/AutoVoice/`) | 510MB | ✅ **محلَّل — كشف كتالوج API كامل، القسم 8.6.** محرك ASR/TTS من AISpeech (`com.aispeech.*`, DUI/DDS SDK). لم يُفحص بعد تعامله مع المايك/wake word بالتفصيل |
 | `Cluster.apk` (`com.byd.cluster`) | 20MB | سُحب، لم يُحلَّل بعمق |
 | `CarSetting.apk` | 209MB | محلَّل جزئياً (القسم 8.3) |
 | `CarStatusProvider.apk` | 11.5KB | محلَّل بالكامل (القسم 8.3) |
 | `getprop` كامل، `pm list packages -f`، `pm list permissions -f`، `settings list system/global` | نصوص خفيفة | مرجع كامل لخصائص النظام والحزم والأذونات، لم يُستخرج منها كل المعلومات بعد |
+
+## 8.6 كتالوج API الحقيقي الكامل — مستخرج من `AutoVoice.apk` (2026-10-11)
+
+### أهم اكتشاف بالمشروع لحد الآن
+`AutoVoice.apk` (المساعد الصوتي "你好小迪") **يحوي الكلاسات الكاملة الفعلية** لـ `android.hardware.bydauto.*` — مو بس مراجع استخدام (خلاف `CarSetting.apk`، القسم 8.3). يعني عندنا الآن **التوقيع الحقيقي لكل دالة تحكم بالسيارة**، مستخرج بتحليل ساكن صرف (jadx)، **بلا أي استدعاء فعلي على السيارة**، ومن برنامج **مُثبّت فعلياً على سيارتنا** (مو مرجع من سيارة تانية زي BYDMate).
+
+**تحذير قانوني يُحترم:** هاي الكلاسات ملك BYD/AISpeech. **لا يُنسخ أي كود منها لريبونا** — فقط توثيق أسماء الدوال والتوقيعات كمرجع هندسي (بموازاة توصية القسم 6.2: "استعمل stubs يدوية، لا تنسخ كود BYD").
+
+### البنية المعمارية المؤكدة
+- `BYDAutoDoorLockDevice` (device_type **1041**) و`BYDAutoRearViewMirrorDevice` (device_type **1047**): **قراءة فقط** (status queries بالمنطقة/الجهة). لا setters.
+- **كل الكتابة الفعلية** (قفل/فتح، طي/فرد مرايا، نوافذ...) تمر عبر **`BYDAutoSettingDevice`** (كلاس مركزي ضخم، device_type متعدد حسب الوظيفة) أو **`BYDAutoBodyworkDevice`** لوظائف الهيكل المباشرة (نوافذ/سقف/ستارة).
+- كل دالة بـ`BYDAutoSettingDevice`/`BYDAutoBodyworkDevice` تستدعي داخلياً `context.enforceCallingOrSelfPermission(<BYDAUTO_X_PERM>)` — فحص صلاحية أندرويد قياسي **بعملية الاستدعاء نفسها** (مو عبر autoservice البعيدة). هذا يعني: أي عملية تملك الصلاحية (BYD-signed، أو shell حسب سياسة الجهاز غير المؤكدة بعد) تقدر تستدعي الدالة مباشرة محلياً، والدالة هي يلي تتواصل مع autoservice داخلياً عبر `super.get/set(...)`.
+
+### `BYDAutoBodyworkDevice` — النوافذ وفتحة السقف والهيكل
+```java
+// القراءة
+int getWindowOpenPercent(int window)      // نسبة فتح نافذة (0-100 الأرجح)
+int getWindowState(int window)
+int getWindowPermitState()
+int getDoorState(int door)
+int getSunroofPosition()
+int getSunroofState()
+int getPowerLevel()                        // == طابق قراءتنا الحية logcat بالضبط
+int getBatteryCapacity() / getBatteryVoltageLevel()
+String getAutoVIN()
+
+// الكتابة (الدالة الأساسية للنوافذ — توقيعها مؤكد من استخدام CarWindowApiImpl):
+int setAllWindowState(int frontLeft, int frontRight, int rearLeft, int rearRight)
+int setBodyWindowCtrlState(int area, int state)   // نمط CTRL بديل (منطقة+حالة)
+int setMoonRoofState(int state)            // فتحة السقف
+int setSunshadeState(int state)            // الستارة
+int setMoonRoofAndSunshadeStop()
+int setRainCloseWindow(int state)          // إغلاق تلقائي بالمطر
+```
+
+### `BYDAutoAcDevice` — مكيف مخصّص وغني جداً (809 سطر)
+```java
+int start(int zone) / stop(int zone)
+int setAcTemperature(int r7, int r8, int r9, int r10)   // 4 بارامترات (منطقة/قيمة/وحدة؟ يحتاج تأكيد)
+int setAcWindLevel(int zone, int level)
+int setAcWindMode(int zone, int mode)
+int setAcCycleMode(int zone, int mode)      // دائرة داخلية/خارجية
+int setAcDefrostState(int a, int b, int c)
+int setAcMaxCoolingState(int state)
+int setAcControlMode(int zone, int mode)    // يدوي/تلقائي
+int startRearAc(int zone) / stopRearAc(int zone)
+int setRearAcWindLevel(int zone, int level)
+int setRearAcLockState(int state)
+// + عشرات دوال get المقابلة لكل حالة
+```
+
+### `BYDAutoSettingDevice` — المركز الموحّد (2373 سطر، أكبر كلاس)
+أهم ما يغطيه (أسماء الدوال فقط، التفاصيل بالكود الأصلي غير المنسوخ):
+- **الأقفال:** `getDoorLock()` / `setDoorLock(int)`، `getAutoLock*`، `getOverspeedLock*` (قفل تلقائي بالسرعة — يطابق قاعدة الأمان بالقسم 6.3!).
+- **النوافذ (إعدادات سلوك، مو الموضع):** `getLockCarRiseWindow`/`setLockCarRiseWindow`، `getRemoteControlUp/Downwindow*`، `getMicroSwitchLock/UnlockWindowState`.
+- **المرايا:** `getRearViewMirrorFlip`/`setRearViewMirrorFlip`، `getLeft/RightViewMirrorFlipAngle`، `getAutoExternalRearMirrorFollowUpSwitch`/`set...`، `getExternalRearMirrorAutoFoldSetting`.
+- **المقاعد:** `getSeatHeatingState(int seat)`/`setSeatHeatingState(int seat, int level)`، `getSeatVentilatingState`/`setSeatVentilatingState`.
+- **الإضاءة المحيطية (IAL):** `getIALColor`/`setIALColor(area, r, g, b?)`، `getIALBrightness`/`setIALBrightness`.
+- **الصندوق الخلفي:** `getBackDoorElectricMode`/`setBackDoorElectricMode`، `getBackDoorOpenedHeight`/`setBackDoorOpenedHeight` (ارتفاع الفتح الكهربائي).
+- **المساحات:** `getAutoRainWiperState`/`setAutoRainWiperState`.
+- **شحن:** `getChargingPort`/`setChargingPort`، `getSOCTarget`/`setSOCTarget`.
+- **متفرقات:** اللغة، الثيم، مستوى صوت التنبيه، مؤشرات تحذير متعددة (حزام الأمان، زيت المحرك، بطارية ضعيفة...).
+
+### الأثر على الخطة
+- **لم نعد نحتاج نخمّن أي اسم دالة لأي وظيفة راحة تقريباً** — الكتالوج أعلاه يغطي كل شيء بقائمة القسم 6.3 تقريباً (عدا بعض التفاصيل كالقيم المقبولة بالضبط لكل بارامتر، يلي تحتاج تجربة فعلية لاحقاً أو قراءة أعمق للـ bytecode).
+- **الخطوة التالية الطبيعية لمرحلة الكتابة (Stage 3):** بناء الـ helper daemon (مثل BYDMate، القسم 8.4) يستدعي هالدوال **بالاسم مباشرة** (`BYDAutoBodyworkDevice.getInstance(ctx).setAllWindowState(...)`) بدل تخمين أرقام Binder خام — أأمن وأوضح بما لا يقاس.
+- السؤال الوحيد المتبقي عملياً: **هل عملية الـ helper (شغّالة بصلاحية shell) بتعدّي فحص `enforceCallingOrSelfPermission`؟** هذا يُحسم فقط بتجربة فعلية واحدة بسيطة (قراءة، مو كتابة) بجلسة قادمة متصلة بالسيارة.
 
 ## 9. الأسئلة المفتوحة (تحتاج تجربة على السيارة)
 
