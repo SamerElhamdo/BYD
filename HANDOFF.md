@@ -47,7 +47,13 @@
 
 **ملاحظة بيئة:** JDK 27 (الافتراضي بالنظام) غير مدعوم من Kotlin 2.0.21 compiler (internal error). ثُبّت JDK 21 LTS عبر brew (`openjdk@21`)، وضُبط بـ `companion-app/gradle.properties` (`org.gradle.java.home`). **لو صار خطأ غريب بالـ compiler مستقبلاً، أول شي تتأكد منه: `./gradlew --stop` (daemon قديم عالق بـ JDK غلط) قبل أي تشخيص تاني.**
 
-**الخطوة التالية:** طبقة Android/Compose (RTL) فوق `:domain` — تحتاج تثبيت Android SDK (تحميل كبير، لم يحصل بعد). أو بدلاً منها: تحليل `AutoVoice.apk` المحفوظ بـ `~/byd-analysis-cache/` لاستخراج fids إضافية قبل التوسّع بالـ backends الحقيقية.
+**تحديث (نفس الليلة، أعمق بكثير):**
+- ✅ **حُلِّل `AutoVoice.apk` بالكامل** (القسم 8.6) — كشف **الكتالوج الحقيقي الكامل** لـ `android.hardware.bydauto.*` (أسماء دوال مؤكدة، لا تخمين) لكل من: النوافذ/السقف (`BYDAutoBodyworkDevice`)، المكيف (`BYDAutoAcDevice`)، والمركز الموحّد (`BYDAutoSettingDevice`: أقفال، مرايا، مقاعد، إضاءة، صندوق...).
+- ✅ **Android SDK مثبّت** (`~/.android-sdk`: platform-tools + android-28 + build-tools 34).
+- ✅ **أول APK فعلي بُني بنجاح**: `companion-app/app/` — Jetpack Compose، RTL مفروض (بمعزل عن لغة النظام)، شاشة تجريبية حقيقية تستدعي `SafetyPolicy` عبر `FakeBackend` وتعرض النتيجة (نجاح/رفض مع السبب).
+- 12/12 اختبار `:domain:test` لسا ناجحة.
+
+**الخطوة التالية:** تثبيت الـ APK فعلياً على محاكي أو — الأفضل — على السيارة الحقيقية بجلسة قادمة (قراءة فقط أولاً)، ثم بناء `AutoServiceBackend` حقيقي (helper daemon بنمط BYDMate) يستدعي الدوال الموثّقة بالقسم 8.6 بالاسم المباشر.
 
 ## 3. حالة المرحلة 0: اكتملت فعلياً ✅
 

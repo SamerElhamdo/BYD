@@ -6,6 +6,11 @@ class FakeBackend(initialState: VehicleState) : PolicyEnforcingGateway() {
 
     override fun currentState(): VehicleState = state
 
+    /** UI-preview / test-only knob — not part of [VehicleGateway]. Real backends read speed live. */
+    fun setSpeedForTesting(speedKmh: Int) {
+        state = state.copy(speedKmh = speedKmh)
+    }
+
     override fun performExecute(command: Command): ExecutionResult {
         state = applyCommand(state, command)
         return ExecutionResult.Success
