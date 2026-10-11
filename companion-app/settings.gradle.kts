@@ -17,3 +17,4 @@ rootProject.name = "companion-app"
 
 include(":domain")
 include(":app")
+include(":bridge")

@@ -53,7 +53,14 @@
 - ✅ **أول APK فعلي بُني بنجاح**: `companion-app/app/` — Jetpack Compose، RTL مفروض (بمعزل عن لغة النظام)، شاشة تجريبية حقيقية تستدعي `SafetyPolicy` عبر `FakeBackend` وتعرض النتيجة (نجاح/رفض مع السبب).
 - 12/12 اختبار `:domain:test` لسا ناجحة.
 
-**الخطوة التالية:** تثبيت الـ APK فعلياً على محاكي أو — الأفضل — على السيارة الحقيقية بجلسة قادمة (قراءة فقط أولاً)، ثم بناء `AutoServiceBackend` حقيقي (helper daemon بنمط BYDMate) يستدعي الدوال الموثّقة بالقسم 8.6 بالاسم المباشر.
+**تحديث تاني (نفس الليلة):** ✅ **`companion-app/bridge/` مبني وناجح** — بنية `AutoServiceBackend` حقيقية:
+- `BydSdkReflection`: يستدعي كلاسات `android.hardware.bydauto.*` **عبر reflection وقت التشغيل فقط** — صفر استيراد، صفر نسخ كود BYD (القسم 8.6).
+- `HelperDaemon`/`HelperDaemonMain`: نقطة دخول `app_process` + خدمة Binder بروتوكولنا الخاص (`HelperProtocol`، أرقام عمليات أصلية، مو أرقام autoservice ولا BYDMate).
+- `HelperDaemonClient`/`AutoServiceBackend`: الجانب التطبيقي، يرث `SafetyPolicy` تلقائياً عبر `PolicyEnforcingGateway`.
+- **قفل/فتح الأبواب مُوصّل فعلياً** (`DOOR_LOCK_STATE_LOCK=2`/`UNLOCK=1`، ثوابت حقيقية من الكلاس، مو تخمين). **باقي الأوامر (نوافذ، مرايا...) تُرجع `BackendFailure` عمداً** لحد ما نتحقق حياً من قيم area codes — **صفر تخمين لأي fid**.
+- **⚠️ غير مُختبر إطلاقاً على السيارة بعد.** أول شي لازم يتحقق بجلسة قادمة: هل daemon شغّال بصلاحية shell بيعدّي `enforceCallingOrSelfPermission`؟ (راجع القسم 8.6 خطوة أخيرة).
+
+**الخطوة التالية:** تثبيت الـ APK على محاكي أو السيارة الحقيقية (قراءة فقط أولاً)، أو نكمل توسيع `:domain`/الكتالوج، أو نبحث آلية المايك بـ AutoVoice (Stage 4).
 
 ## 3. حالة المرحلة 0: اكتملت فعلياً ✅
 
