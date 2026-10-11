@@ -929,7 +929,7 @@ adb shell pm grant com.byd.carsettings android.permission.BYDAUTO_DOOR_LOCK_GET
 ### الأثر على الخطة
 - **هذا يغيّر مسار Stage 3 بالكامل**: بدل "الكتابة الفعلية مستبعدة بدون حل بروتوكول خام معقّد"، أصبح المسار **موجود وواضح الشكل** (نفس بنية `service call autoservice <code> i32 ... i32 ...`)، وما تبقى هو فقط تحديد كود/device/fid الكتابة المناسبين بعناية وبدون تخمين.
 - `companion-app/bridge/AutoServiceBackend` (القسم 3.0) يحتاج إعادة تصميم: بدل الاعتماد على `HelperDaemon`/reflection، الأصح الآن أداة صغيرة تبني Parcel وتستدعي Binder مباشرة بنفس الطريقة — أبسط وأسرع وأثبت فعلياً.
-- ✅ **بُنيت فعلاً: `tools/autoservice-client/`** — أداة جافا قائمة بذاتها (تعمل عبر `app_process`، بلا JNI حقيقي، بلا أي كلاس BYD) تبني `Parcel` كاملاً (device/fid/value + `StrongBinder` حقيقي عبر `new Binder()`) وتستدعي `transact()` مباشرة على خدمة `autoservice`. مبنية ومُجمَّعة بنجاح محلياً (بلا سيارة). **لم تُختبر حياً بعد** — بانتظار الجلسة القادمة مع السيارة. التفاصيل والقواعد الأمنية بـ`tools/autoservice-client/README.md`.
+- ✅ **بُنيت واختُبرت حياً بنجاح: `tools/autoservice-client/`** — أداة جافا قائمة بذاتها (تعمل عبر `app_process`، بلا JNI حقيقي، بلا أي كلاس BYD) تبني `Parcel` كاملاً (device/fid/value + `StrongBinder` حقيقي عبر `new Binder()`) وتستدعي `transact()` مباشرة على خدمة `autoservice`. تجربة حية (`./run.sh 5 i32:1001 i32:947912728`) رجعت نفس نتيجة `service call` بالضبط (status=0, value=0، مطابق لنافذة مقفولة فعلياً). **الأداة جاهزة الآن لتجربة كتابة فعلية.** التفاصيل والقواعد الأمنية بـ`tools/autoservice-client/README.md`.
 
 ## 8.13 كتالوج الخصائص المؤكدة حياً (device/fid/قيمة حقيقية) — تحديث مستمر (2026-10-11)
 
