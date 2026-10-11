@@ -750,6 +750,47 @@ IntentFilter().addAction("android.intent.action.MEDIA_VOICE")
 - ❓ **غير مؤكد فعلياً حتى تجربة حية**: هل الـ audio HAL/policy على هذا الجهاز (`sys.car.protocol=CAN`، MediaTek MT6765) يسمح فعلياً بتسجيل متزامن، أم يرفض الطلب الثاني عملياً رغم عدم وجود مانع بالكود الظاهر.
 - **لا يحتاج أي كود BYD منسوخ لتنفيذ هذا** — فقط `BroadcastReceiver` قياسي بتطبيقنا، تماماً متوافق مع توصية القسم 6.2.
 
+## 8.8 أول تجربة حية فعلية: الطريق "السهل" (reflection من shell) مستحيل بنيوياً (2026-10-11)
+
+### المنهجية
+أول كود حقيقي نُفّذ على السيارة الليلة. برنامج Java صغير (مصدره موثّق هنا بالكامل، لا كود BYD فيه):
+1. تُرجم محلياً (`javac` + `d8`) إلى `classes.dex`.
+2. نُقل بـ `adb push` إلى `/data/local/tmp/` (مسار تجارب عادي، ليس نظامياً).
+3. شُغِّل عبر `app_process /data/local/tmp ReadTest` بصلاحية `shell`، مع classpath يضيف `CarSetting.apk` المثبّتة أصلاً (لحل كلاسات `android.hardware.bydauto.*` وقت التشغيل — بلا أي استيراد أو نسخ لكود BYD، القسم 8.6).
+4. حُذف الملف المؤقت فوراً بعد الاختبار.
+
+### النتيجة 1: الحصول على Context ناجح بالكامل ✅
+```
+CONTEXT_OK android.app.ContextImpl@d7fcdf5
+```
+`ActivityThread.systemMain()` + `getSystemContext()` (بعد `Looper.prepareMainLooper()`) يعطي Context حقيقي صالح من عملية `app_process` بصلاحية shell. هذا الأساس التقني الذي بُني عليه تصميم `HelperDaemonMain` (القسم 8.4) **مؤكد يعمل فعلياً**.
+
+### النتيجة 2: فحص الصلاحية يفشل — حاسم ❌
+```
+java.lang.SecurityException: Neither user 2000 nor current process has android.permission.BYDAUTO_SETTING_COMMON.
+	at android.hardware.bydauto.setting.BYDAutoSettingDevice.getInstance(BYDAutoSettingDevice.java:752)
+```
+`user 2000` = `shell`. **الاستدعاء المحلي (reflection) لكلاسات `android.hardware.bydauto.*` من عملية shell عادية مرفوض** بفحص `enforceCallingOrSelfPermission` **داخل الكلاس نفسه**، قبل أي اتصال بـ `autoservice`.
+
+### النتيجة 3: `pm grant` مستبعد بنيوياً — ليس مجرد فشل هذه المرة ❌
+تجربة تشخيصية (صفر تأثير فعلي: استهداف `com.byd.carsettings` التي تملك الصلاحيتين أصلاً `granted=true`، تأكدنا عبر `dumpsys` قبل التجربة):
+```bash
+adb shell pm grant com.byd.carsettings android.permission.BYDAUTO_SETTING_COMMON
+# → Security exception: Package com.byd.carsettings has not requested permission ...
+adb shell pm grant com.byd.carsettings android.permission.BYDAUTO_DOOR_LOCK_GET
+# → نفس الخطأ بالضبط
+```
+النتيجة **موحّدة على صلاحيات قراءة وكتابة كليهما** — رسالة Android القياسية هذه (`enforceDeclaredUsedAndRuntimeOrDevelopment`) تعني: **هذه الصلاحيات من نوع `signature`**، و`pm grant`/`adb shell pm grant` **لا يقدر يمنحها لأي حزمة كانت، بتصميم أندرويد نفسه** — ليست مسألة "الحزمة ما طلبتها"، بل صنف الصلاحية كله خارج نطاق أداة `pm grant`. **لا يوجد التفاف على هذا بدون روت.**
+
+### الأثر الاستراتيجي على الخطة بالكامل
+- ❌ **الطريق "السهل" مستبعد نهائياً كمسار قابل للتطبيق**: أي عملية (shell، أو تطبيقنا الموقّع بشهادتنا الخاصة) **لن تقدر أبداً** تستدعي `android.hardware.bydauto.*` مباشرة عبر reflection/استدعاء جافا، بغض النظر عمن تكون — فقط عمليات موقّعة بنفس شهادة BYD (أو بصلاحيات نظام أعمق) تنجح. هذا يفسّر عملياً لماذا `BYDAutoSettingDevice.getInstance()` تنجح صامتة داخل `CarSetting.apk`/`AutoVoice.apk` (موقّعة BYD) وتفشل من أي كود خارجي.
+- 🟡 **الاستنتاج المنطقي**: أدوات مثل BYDMate/byd-apps **لا تستخدم هذا المسار إطلاقاً**. هي على الأرجح تتواصل مباشرة مع `autoservice` (الخدمة الأصلية) **عبر Binder خام** (`service call` بأرقام عمليات حقيقية مُكتشفة بتحليل ثنائي عميق لـ `libbydauto.so`/`autoservice`)، **متجاوزة بالكامل** فحص الصلاحية المحلي بكلاسات الجافا الغلاف. هذا يفسّر أيضاً حجم كود BYDMate الضخم وتوثيقه الزمني الممتد (شهور من "live-validated" لكل fid) — لم يكن اختصاراً، كان عملاً هندسياً عكسياً حقيقياً وطويلاً.
+- **الخطوة التالية الحقيقية للكتابة (Stage 3) أصعب بكثير مما افترضنا سابقاً بالقسم 8.4/8.6**: تحتاج فك تشفير بروتوكول Binder الخام لـ`autoservice` فعلياً (أرقام عمليات + تنسيق Parcel)، وهذا يحتاج إما:
+  1. تحليل ثنائي (disassembly، Ghidra/radare2) لـ`libbydauto.so` (إن كان قابلاً للقراءة من shell — لم نتحقق بعد، بعكس `autoservice` نفسها المحجوبة SELinux بالقسم 8.3).
+  2. أو مراقبة Binder transactions حية أثناء استخدام تطبيق BYD نفسه (عبر أدوات تتبّع Binder بصلاحية shell، إن وُجدت ومتاحة).
+  3. أو قبول أن الكتابة الفعلية (Stage 3) تبقى خارج نطاق هذا المشروع حالياً، والتركيز على القراءة السلبية (logcat، القسم 8.3) كمصدر بيانات وحيد موثوق وآمن.
+- ✅ **لا يُغيّر شيئاً بمسار القراءة السلبية** (القسم 8.3) — تلك تبقى الطريقة الأضمن والمُثبتة فعلياً لجمع كتالوج fids، بلا أي علاقة بهذا القيد.
+
 ## 9. الأسئلة المفتوحة (تحتاج تجربة على السيارة)
 
 1. ✅ **تمّت الإجابة جزئياً (القسم 8.2):** رقم إصدار النظام `26.1.1.2504290.1` مؤكد. فئة الكابينة (DiLink 50 أم 100) ❓ لا تزال غير محسومة، لكن ثبت أن الافتراض بربطها بـ SM7325/D100 غير صحيح لهذه الوحدة.
