@@ -8,7 +8,7 @@
 >
 > **حاجز الكتابة (Stage 3):** كل أكواد الكتابة المرشّحة بجدول القسم 8.11 **تتطلب معامل Binder**، وأداة `adb shell service call` **لا تدعم تمرير Binder إطلاقاً** (فقط i32/i64/f/d/s16) — تأكّد هذا حياً. **الكتابة الفعلية تحتاج تطوير برنامج صغير (Java/native) يبني Parcel سليم بمعامل Binder حقيقي، خارج السيارة، قبل أي تجربة حية جديدة.**
 >
-> **الخطوة التالية المقترحة لجلسة قادمة (بلا حاجة للسيارة):** بناء ذاك العميل الصغير لـ`autoservice` مباشرة (JNI/native، يستبدل `companion-app/bridge/HelperDaemon` القديم المعتمد على reflection). لما نرجع للسيارة: تجربة القفل بمنهجية get مباشرة بدل الانتظار على بث سلبي، ومحاولة SOC بمراقبة أطول.
+> **تحديث: العميل الصغير مبنيّ فعلاً ✅** — `tools/autoservice-client/` (أداة جافا عبر `app_process`، بلا JNI حقيقي، بلا كلاسات BYD — فقط `android.os.Parcel/IBinder/Binder` العامة). بُنيَت وجُمِّعت محلياً بنجاح (`./build.sh`)، **لم تُختبر حياً بعد**. جاهزة لأول تجربة كتابة فعلية بالجلسة القادمة — اقرأ `tools/autoservice-client/README.md` (فيه جدول الأكواد المرشّحة وقواعد الأمان) قبل أي تشغيل. لما نرجع للسيارة: نبدأ بقراءة تأكيدية (كود 5) على نافذة السائق، ثم نجرب أول كتابة حذرة جداً (مرشّح: كود 6 أو 10، والسيارة بـP، وقراءة قبل وبعد).
 > **ملفات ضخمة (APKs وتفريغات وملفات تحليل ثنائي) محفوظة بشكل دائم على:** `/var/home/samer-dev/byd-analysis-cache/` (**خارج الريبو عمداً** — ملكية BYD/تحليل ثنائي، لا تُرفع لـ GitHub). فيها `AutoVoice.apk`، `CarSetting.apk`، `Cluster.apk`، `CarStatusProvider.apk`، نسخة محلية من BYDMate، `libbydauto-arm64.so`/`libbydautoservice-arm64.so` (+ arm32)، `bp_vtable_functions_disasm.txt` (تفكيك العشرين دالة)، `symbols_demangled.txt`، `onTransact_disasm.txt`.
 
 ---
