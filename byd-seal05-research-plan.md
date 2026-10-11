@@ -722,6 +722,34 @@ int setRearAcLockState(int state)
 - **الخطوة التالية الطبيعية لمرحلة الكتابة (Stage 3):** بناء الـ helper daemon (مثل BYDMate، القسم 8.4) يستدعي هالدوال **بالاسم مباشرة** (`BYDAutoBodyworkDevice.getInstance(ctx).setAllWindowState(...)`) بدل تخمين أرقام Binder خام — أأمن وأوضح بما لا يقاس.
 - السؤال الوحيد المتبقي عملياً: **هل عملية الـ helper (شغّالة بصلاحية shell) بتعدّي فحص `enforceCallingOrSelfPermission`؟** هذا يُحسم فقط بتجربة فعلية واحدة بسيطة (قراءة، مو كتابة) بجلسة قادمة متصلة بالسيارة.
 
+## 8.7 آلية المايك وزر المقود — تحليل ساكن لـ `AutoVoice.apk` (2026-10-11)
+
+### الاكتشاف الحاسم: زر المقود = بث نظام عادي
+بـ `com/byd/autovoice/service/presenter/f.java` (اسمه الأصلي `ThirdBtnPresenterImpl.java`)، سجّل `BroadcastReceiver` على:
+```java
+IntentFilter().addAction("android.intent.action.MEDIA_VOICE")
+```
+مع تعليق بالكود (بالصينية): `"当前为方向盘唤醒"` = **"هذا تنبيه من زر المقود"**.
+
+**الأثر:** `MEDIA_VOICE` بث عام (implicit broadcast)، **ليس API خاصاً بـ BYD ولا محمياً بصلاحية خاصة ظاهرة بالكود**. **أي تطبيق يقدر يسجّل `BroadcastReceiver` على نفس الـ action** ويستقبل ضغطة زر المقود **بالتوازي** مع "你好小迪"، **بدون الحاجة لحيلة Accessibility Service** (يلي اعتمدتها BYDMate كحل بديل لعدم معرفتها بهذا البث، أو لأنه غير متاح على أجيال DiLink الأخرى). هذا يبسّط تصميم المرحلة 4 بشكل كبير.
+
+**بثوث إضافية مكتشفة بنفس الكلاس:**
+| Action | الاستخدام |
+|---|---|
+| `com.intent.action.StartVoice_From_Launcher` | تفعيل من اللانشر (أيقونة المايك) |
+| `com.byd.action.come.from.launcher_Receiver` (extra: `VOICE_TEXT`) | تمرير نص جاهز من اللانشر |
+| `com.intent.action.Voice_self_From_Screen` (extra: `Scrren_ViewText`) | تفعيل بنص من عنصر شاشة |
+
+### مصدر الصوت والتزامن
+- `AudioRecordTask` (`com/byd/autovoice/service/b.java`) تستخدم `android.media.AudioRecord` **القياسية** (مو هاردوير حصري)، بمصدر صوت: `MediaRecorder.AudioSource.MIC` (1) أو `VOICE_RECOGNITION` (6) — **كلاهما مصدر قياسي بأندرويد**.
+- `AudioManagerApiImpl` (`com/byd/autovoice_controlapi/a/c/c/c.java`) تستخدم `AudioManager.requestAudioFocus(listener, STREAM_MUSIC, AUDIOFOCUS_GAIN_TRANSIENT)` — **حجز مؤقت**، مو حصري دائم. فيها أيضاً امتدادات BYD مخصّصة مثيرة للاهتمام: `getCurrentAudioFocusPackage()`، `requestDenoiseMode()`، `setNaviMuteState()` — غير موثّقة بـ AOSP القياسي، لاحتمال استخدام لاحق.
+- سطر لافت بـ `presenter/h.java`: `"ProcessVoiceButton: no mic system permission"` — يؤكد أن AutoVoice نفسها عندها مسار لفحص فشل صلاحية المايك، يعني المايك **ليس مضموناً دائماً حتى لها**.
+
+### الخلاصة لمرحلة 4
+- 🟡 **مؤشرات إيجابية قوية** (لا حصرية بالكود) أن مساعداً عربياً منفصلاً يقدر: (أ) يستخدم زر المقود كزناد عبر نفس البث العام، و(ب) يفتح `AudioRecord` خاص به بالتوازي.
+- ❓ **غير مؤكد فعلياً حتى تجربة حية**: هل الـ audio HAL/policy على هذا الجهاز (`sys.car.protocol=CAN`، MediaTek MT6765) يسمح فعلياً بتسجيل متزامن، أم يرفض الطلب الثاني عملياً رغم عدم وجود مانع بالكود الظاهر.
+- **لا يحتاج أي كود BYD منسوخ لتنفيذ هذا** — فقط `BroadcastReceiver` قياسي بتطبيقنا، تماماً متوافق مع توصية القسم 6.2.
+
 ## 9. الأسئلة المفتوحة (تحتاج تجربة على السيارة)
 
 1. ✅ **تمّت الإجابة جزئياً (القسم 8.2):** رقم إصدار النظام `26.1.1.2504290.1` مؤكد. فئة الكابينة (DiLink 50 أم 100) ❓ لا تزال غير محسومة، لكن ثبت أن الافتراض بربطها بـ SM7325/D100 غير صحيح لهذه الوحدة.
@@ -731,7 +759,7 @@ int setRearAcLockState(int state)
 5. ✅ **تمّت الإجابة (القسم 8.2):** كلاسات `android.hardware.bydauto.*` **غير موجودة**. فقط خدمة `autoservice` موجودة (الطريق B هو الصالح).
 6. 🟡 **بدأت الإجابة (القسم 8.3):** أول fid مؤكد تجريبياً — `event_type=0x38800018` (`device_type 1001`) = نسبة فتح نافذة السائق، ملتقط عبر مراقبة logcat سلبية. الباقي (الأقفال، المكيف، الفتح الجزئي، بقية النوافذ) ❓ لسا يحتاج نفس المنهجية لكل وظيفة.
 7. هل يعيد قفل الأبواب الرئيسي حالة صالحة؟ (على Dolphin كان يعيد INVALID)
-8. هل يمكن لتطبيق طرف ثالث الحصول على الميكروفون مع وجود "你好小迪"؟ وهل يمكن التقاط زر الصوت في المقود؟
+8. ✅ **تمّت الإجابة جزئياً (القسم 8.7، تحليل ساكن لـ `AutoVoice.apk`):** زر المقود الصوتي يُطلق **بثاً عاماً قياسياً** `android.intent.action.MEDIA_VOICE` — **ليس API خاصاً بـ BYD**، وأي تطبيق يقدر يسجّل عليه مباشرة (بلا Accessibility Service). مصدر الصوت (`AudioSource.MIC`/`VOICE_RECOGNITION`) قياسي أيضاً، وحجز `AudioManager` **مؤقت** (`AUDIOFOCUS_GAIN_TRANSIENT`) لا دائم. ❓ لسا يحتاج تأكيد حي: هل التسجيل الفعلي (`AudioRecord`) يعمل بالتوازي بلا رفض من الـ HAL، وهل تسجيل بث `MEDIA_VOICE` من تطبيق خارجي ينجح فعلاً (لم يُختبر على السيارة).
 9. ✅ **تمّت الإجابة (2026-10-11):** نعم، النظام يحوي خط عربي كامل: `NotoNaskhArabic-Regular/Bold.ttf` و`NotoNaskhArabicUI-Regular/Bold.ttf` ضمن مجموعة خطوط Noto القياسية الكاملة (235 ملف خط بـ `/system/fonts`). لا حاجة لتضمين خط عربي داخل تطبيقنا، رغم أن ذلك يبقى ممارسة أفضل للتحكم بالمظهر. ❓ دعم locale عربي على مستوى التطبيق (`AppCompatDelegate.setApplicationLocales`) لم يُختبر بعد.
 10. هل يسمح اتصال 5G المدمج (شريحة BYD) لتطبيقات الطرف الثالث بالإنترنت خارج الصين؟ أم نحتاج هوتسبوت؟
 11. متى يعلّق معالج الشاشة نفسه بعد إطفاء السيارة؟ وهل يمكن إيقاظه لأمر عن بعد دون T-Box؟
