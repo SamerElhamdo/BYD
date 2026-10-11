@@ -36,6 +36,19 @@
 
 > لا تكتب IMEI أو ICCID أو MSISDN أو VIN أو الرقم التسلسلي في أي ملف في الريبو، ولا تطبعها في المخرجات دون داعٍ. الـ IMEI يُستخدم لتوليد كلمة مرور القائمة الهندسية.
 
+## 3.0 المرحلة 1 بلشت فعلياً ✅ (2026-10-11)
+
+مشروع `companion-app/` (Gradle، Kotlin JVM — بلا Android SDK بعد) فيه وحدة `:domain` كاملة:
+- `VehicleState`, `Command` (sealed interface يغطي فقط وظائف الراحة المسموحة — القيادة/الفرامل/ADAS غير قابلة للتمثيل أصلاً بنظام الأنواع).
+- `SafetyPolicy`: يفرض حدود القسم 6.3 (نافذة ≤120كم/س، فتحة سقف ≤80كم/س، فتح قفل ≤30كم/س، صندوق بوضع P فقط، مرايا بالتوقف فقط). **الإغلاق/القفل دائماً مسموح**.
+- `VehicleGateway` + `PolicyEnforcingGateway`: كل backend (BydAuto/AutoService/Fake) بيورّث `SafetyPolicy` تلقائياً، بلا تجاوز ممكن.
+- `FakeBackend`: تنفيذ وهمي بالذاكرة للاختبار.
+- **12/12 اختبار JUnit ناجح** (`./gradlew :domain:test`).
+
+**ملاحظة بيئة:** JDK 27 (الافتراضي بالنظام) غير مدعوم من Kotlin 2.0.21 compiler (internal error). ثُبّت JDK 21 LTS عبر brew (`openjdk@21`)، وضُبط بـ `companion-app/gradle.properties` (`org.gradle.java.home`). **لو صار خطأ غريب بالـ compiler مستقبلاً، أول شي تتأكد منه: `./gradlew --stop` (daemon قديم عالق بـ JDK غلط) قبل أي تشخيص تاني.**
+
+**الخطوة التالية:** طبقة Android/Compose (RTL) فوق `:domain` — تحتاج تثبيت Android SDK (تحميل كبير، لم يحصل بعد). أو بدلاً منها: تحليل `AutoVoice.apk` المحفوظ بـ `~/byd-analysis-cache/` لاستخراج fids إضافية قبل التوسّع بالـ backends الحقيقية.
+
 ## 3. حالة المرحلة 0: اكتملت فعلياً ✅
 
 تحديد الجيل، والمعالج، ووجود `autoservice`، وأول قراءة حيّة لإشارة حقيقية — كلها تمّت (القسم 8.2–8.3 بالوثيقة). **المهمة التالية المقترحة للجلسة القادمة: المرحلة 1** (بناء VehicleGateway + SafetyPolicy على المحاكي، القسم 5 أدناه)، أو تحليل `AutoVoice.apk` المحفوظ محلياً إن أردنا مزيداً من fids قبل البناء.
